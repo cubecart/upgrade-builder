@@ -77,8 +77,11 @@ fi
 # 2) Detect admin directory
 ############################################
 ADMIN_DIR_PATH=$(find "$INSTALL_PATH" -maxdepth 1 -type d -name "admin_*" | head -n1 || true)
+if [ -z "$ADMIN_DIR_PATH" ] && [ -d "$INSTALL_PATH/admin" ]; then
+    ADMIN_DIR_PATH="$INSTALL_PATH/admin"
+fi
 if [ -z "$ADMIN_DIR_PATH" ]; then
-    echo "ERROR: No admin_* directory found."
+    echo "ERROR: No admin directory found."
     exit 1
 fi
 ADMIN_FOLDER=$(basename "$ADMIN_DIR_PATH")
@@ -87,8 +90,11 @@ ADMIN_FOLDER=$(basename "$ADMIN_DIR_PATH")
 # 3) Detect admin file
 ############################################
 ADMIN_FILE_PATH=$(find "$INSTALL_PATH" -maxdepth 1 -type f -name "admin_*.php" | head -n1 || true)
+if [ -z "$ADMIN_FILE_PATH" ] && [ -f "$INSTALL_PATH/admin.php" ]; then
+    ADMIN_FILE_PATH="$INSTALL_PATH/admin.php"
+fi
 if [ -z "$ADMIN_FILE_PATH" ]; then
-    echo "ERROR: No admin_*.php file found."
+    echo "ERROR: No admin file found."
     exit 1
 fi
 ADMIN_FILE=$(basename "$ADMIN_FILE_PATH")
