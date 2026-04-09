@@ -379,16 +379,3 @@ else
         echo "Resolve the conflicting file(s) manually, then deploy."
     fi
 fi
-
-############################################
-# Open in VS Code (optional)
-############################################
-VSCODE="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-
-# Open all three in one VS Code window
-#"$VSCODE" -n \
-#    "$SOURCE_DIR" \
-#    "${ARCHIVE_ROOT}/${FROM_VERSION}"
-
-#"$VSCODE" -n \
-#    "${ARCHIVE_ROOT}/${TO_VERSION}"
