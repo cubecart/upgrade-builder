@@ -289,8 +289,7 @@ else
         mv "$UPGRADED_DIR" "${UPGRADED_DIR}_${timestamp}"
     fi
     cp -a "$TO_DIR" "$UPGRADED_DIR"
-    find "$UPGRADED_DIR" -type f \( -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" -o -name "*.tpl" -o -name "*.xml" -o -name "*.json" -o -name "*.sql" -o -name "*.txt" -o -name "*.htaccess" -o -name "*.md" \) \
-        -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+    find "$UPGRADED_DIR" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
 
     # Dry-run the customisation patch against latest stock
     echo
@@ -322,8 +321,7 @@ else
         FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
         NORM_TO=$(mktemp -d)
         cp -a "$TO_DIR" "$NORM_TO/to"
-        find "$NORM_TO/to" -type f \( -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" -o -name "*.tpl" -o -name "*.xml" -o -name "*.json" -o -name "*.sql" -o -name "*.txt" -o -name "*.htaccess" -o -name "*.md" \) \
-            -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+        find "$NORM_TO/to" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
         diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
             | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
             > "$FINAL_PATCH" 2>/dev/null || true
@@ -373,8 +371,7 @@ else
         FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
         NORM_TO=$(mktemp -d)
         cp -a "$TO_DIR" "$NORM_TO/to"
-        find "$NORM_TO/to" -type f \( -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" -o -name "*.tpl" -o -name "*.xml" -o -name "*.json" -o -name "*.sql" -o -name "*.txt" -o -name "*.htaccess" -o -name "*.md" \) \
-            -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+        find "$NORM_TO/to" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
         diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
             | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
             > "$FINAL_PATCH" 2>/dev/null || true
@@ -408,6 +405,13 @@ else
         echo "Resolve the conflicting file(s) manually, then deploy."
     fi
 fi
+
+# Create tar.gz archive of the result
+ARCHIVE_NAME="$(basename "$ARCHIVE_ROOT").tar.gz"
+tar -czf "${ARCHIVE_ROOT}.tar.gz" -C "$(dirname "$ARCHIVE_ROOT")" "$(basename "$ARCHIVE_ROOT")"
+echo
+echo "Archive created:"
+echo "  ${ARCHIVE_ROOT}.tar.gz"
 
 # Play completion sound
 afplay /System/Library/Sounds/Glass.aiff &
