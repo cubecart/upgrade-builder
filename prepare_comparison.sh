@@ -156,12 +156,9 @@ process_version() {
     local zip_file="${DOWNLOAD_DIR}/CubeCart-${version}.zip"
     local root_dir="${ARCHIVE_ROOT}/${version}"
 
-    timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
-
-    # If version dir already exists, back it up
+    # If version dir already exists, remove it
     if [ -d "$root_dir" ]; then
-        local backup_dir="${root_dir}_${timestamp}"
-        mv "$root_dir" "$backup_dir"
+        rm -rf "$root_dir"
     fi
 
     mkdir -p "$root_dir"
@@ -202,10 +199,8 @@ process_version "$TO_VERSION"
 # Copy source to ARCHIVE_ROOT/source
 ############################################
 SOURCE_DIR="${ARCHIVE_ROOT}/source"
-timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
-
 if [ -d "$SOURCE_DIR" ]; then
-    mv "$SOURCE_DIR" "${SOURCE_DIR}_${timestamp}"
+    rm -rf "$SOURCE_DIR"
 fi
 
 mkdir -p "$SOURCE_DIR"
@@ -286,7 +281,7 @@ if [ "$CUSTOM_LINES" -eq 0 ]; then
 else
     # Start with a copy of stock TO_VERSION (latest release), normalised to LF
     if [ -d "$UPGRADED_DIR" ]; then
-        mv "$UPGRADED_DIR" "${UPGRADED_DIR}_${timestamp}"
+        rm -rf "$UPGRADED_DIR"
     fi
     cp -a "$TO_DIR" "$UPGRADED_DIR"
     find "$UPGRADED_DIR" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
