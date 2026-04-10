@@ -300,105 +300,97 @@ else
         PATCHED_COUNT=$(echo "$PATCHED_FILES" | grep -c . 2>/dev/null || echo 0)
     fi
 
-    if [ "$DRY_RUN_EXIT" -eq 0 ]; then
-        # Apply customisations for real
-        patch -p1 --forward -d "$UPGRADED_DIR" < "$CUSTOM_PATCH" > /dev/null 2>&1
+    # Parse dry-run results into clean and failed lists
+    eval "$(echo "$DRY_RUN_OUTPUT" | awk '
+        /^patching file / {
+            if (current_file != "" && !has_fail) clean[clean_count++] = current_file
+            if (current_file != "" && has_fail) fail[fail_count++] = current_file
+            current_file = $0; sub(/^patching file /, "", current_file)
+            gsub(/'\''/, "", current_file)
+            has_fail = 0
+        }
+        /failed|FAILED|No file found/ { has_fail = 1 }
+        END {
+            if (current_file != "" && !has_fail) clean[clean_count++] = current_file
+            if (current_file != "" && has_fail) fail[fail_count++] = current_file
+            print "CLEAN_COUNT=" clean_count
+            print "FAIL_COUNT=" fail_count
+            printf "CLEAN_LIST='"'"'"
+            for (i = 0; i < clean_count; i++) print "  ✓ " clean[i]
+            printf "'"'"'\n"
+            printf "FAIL_LIST='"'"'"
+            for (i = 0; i < fail_count; i++) print "  ✗ " fail[i]
+            printf "'"'"'\n"
+        }
+    ')"
 
+    # Apply customisations (skip rejects gracefully)
+    patch -p1 --forward --no-backup-if-mismatch --reject-file=- -d "$UPGRADED_DIR" < "$CUSTOM_PATCH" > /dev/null 2>&1 || true
+    find "$UPGRADED_DIR" -type f \( -name "*.orig" -o -name "*.rej" \) -delete 2>/dev/null
+
+    # Generate final diff: stock TO (normalised) vs upgraded
+    FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
+    NORM_TO=$(mktemp -d)
+    cp -a "$TO_DIR" "$NORM_TO/to"
+    find "$NORM_TO/to" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+    diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
+        | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
+        > "$FINAL_PATCH" 2>/dev/null || true
+    rm -rf "$NORM_TO"
+    FINAL_LINES=$(wc -l < "$FINAL_PATCH" | tr -d ' ')
+
+    # Write report file
+    REPORT="${ARCHIVE_ROOT}/REPORT.txt"
+    {
+        echo "CubeCart Upgrade Report"
+        echo "======================"
+        echo "From: ${FROM_VERSION}"
+        echo "To:   ${TO_VERSION}"
+        echo "Date: $(date +%Y-%m-%d\ %H:%M:%S)"
         echo
-        echo "===== CUSTOMISATIONS APPLIED SUCCESSFULLY ====="
-        if [ "$PATCHED_COUNT" -gt 0 ]; then
-            echo
-            echo "Customised files applied ($PATCHED_COUNT):"
-            echo "$PATCHED_FILES" | sed "s/^/  ✓ /"
-        fi
-
-        # Generate a final diff: stock TO (normalised) vs upgraded (for review)
-        FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
-        NORM_TO=$(mktemp -d)
-        cp -a "$TO_DIR" "$NORM_TO/to"
-        find "$NORM_TO/to" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
-        diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
-            | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
-            > "$FINAL_PATCH" 2>/dev/null || true
-        rm -rf "$NORM_TO"
-        FINAL_LINES=$(wc -l < "$FINAL_PATCH" | tr -d ' ')
-
-        echo
-        echo "Upgraded copy created at:"
-        echo "  $UPGRADED_DIR  (stock ${TO_VERSION} + your customisations)"
-        if [ "$FINAL_LINES" -gt 0 ]; then
-            echo
-            echo "Differences vs stock ${TO_VERSION}:"
-            echo "  $FINAL_PATCH ($FINAL_LINES lines)"
-        fi
-        echo
-        echo "Review the upgraded copy, then deploy it to replace your live install."
-    else
-        # Conflicts detected — apply what we can, skip the rest
-        echo "Conflicts detected — applying clean patches, skipping conflicts..."
-        APPLY_OUTPUT=$(patch -p1 --forward --reject-file=- -d "$UPGRADED_DIR" < "$CUSTOM_PATCH" 2>&1) || true
-
-        # Parse results into clean and failed lists
-        eval "$(echo "$DRY_RUN_OUTPUT" | awk '
-            /^patching file / {
-                if (current_file != "" && !has_fail) clean[clean_count++] = current_file
-                if (current_file != "" && has_fail) fail[fail_count++] = current_file
-                current_file = $0; sub(/^patching file /, "", current_file)
-                gsub(/'\''/, "", current_file)
-                has_fail = 0
-            }
-            /failed|FAILED|No file found/ { has_fail = 1 }
-            END {
-                if (current_file != "" && !has_fail) clean[clean_count++] = current_file
-                if (current_file != "" && has_fail) fail[fail_count++] = current_file
-                print "CLEAN_COUNT=" clean_count
-                print "FAIL_COUNT=" fail_count
-                printf "CLEAN_LIST='"'"'"
-                for (i = 0; i < clean_count; i++) print "  ✓ " clean[i]
-                printf "'"'"'\n"
-                printf "FAIL_LIST='"'"'"
-                for (i = 0; i < fail_count; i++) print "  ✗ " fail[i]
-                printf "'"'"'\n"
-            }
-        ')"
-
-        # Generate final diff: stock TO (normalised) vs upgraded
-        FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
-        NORM_TO=$(mktemp -d)
-        cp -a "$TO_DIR" "$NORM_TO/to"
-        find "$NORM_TO/to" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
-        diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
-            | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
-            > "$FINAL_PATCH" 2>/dev/null || true
-        rm -rf "$NORM_TO"
-        FINAL_LINES=$(wc -l < "$FINAL_PATCH" | tr -d ' ')
-
-        echo
-        echo "===== PARTIAL UPGRADE — CONFLICTS ON ${FAIL_COUNT} FILE(S) ====="
         if [ "${CLEAN_COUNT:-0}" -gt 0 ]; then
-            echo
             echo "Customisations applied cleanly (${CLEAN_COUNT}):"
             printf '%s\n' "$CLEAN_LIST"
+            echo
         fi
         if [ "${FAIL_COUNT:-0}" -gt 0 ]; then
-            echo
-            echo "Customisations that NEED MANUAL MERGING (${FAIL_COUNT}):"
+            echo "*** CONFLICTS - NEED MANUAL MERGING (${FAIL_COUNT}) ***"
             printf '%s\n' "$FAIL_LIST"
-        fi
-        echo
-        echo "Upgraded copy created at:"
-        echo "  $UPGRADED_DIR  (stock ${TO_VERSION} + clean customisations)"
-        if [ "$FINAL_LINES" -gt 0 ]; then
             echo
-            echo "Differences vs stock ${TO_VERSION}:"
-            echo "  $FINAL_PATCH ($FINAL_LINES lines)"
+            echo "These customisations could not be applied automatically because"
+            echo "the surrounding code changed between ${FROM_VERSION} and ${TO_VERSION}."
+            echo "Review customisations_${FROM_VERSION}.patch and apply them by hand."
+        else
+            echo "All customisations applied successfully."
         fi
-        echo
-        echo "Patch file for manual review:"
-        echo "  $CUSTOM_PATCH  (your customisations)"
-        echo
-        echo "Resolve the conflicting file(s) manually, then deploy."
+    } > "$REPORT"
+
+    echo
+    if [ "${FAIL_COUNT:-0}" -gt 0 ]; then
+        echo "===== PARTIAL UPGRADE — CONFLICTS ON ${FAIL_COUNT} FILE(S) ====="
+    else
+        echo "===== CUSTOMISATIONS APPLIED SUCCESSFULLY ====="
     fi
+    if [ "${CLEAN_COUNT:-0}" -gt 0 ]; then
+        echo
+        echo "Customisations applied cleanly (${CLEAN_COUNT}):"
+        printf '%s\n' "$CLEAN_LIST"
+    fi
+    if [ "${FAIL_COUNT:-0}" -gt 0 ]; then
+        echo
+        echo "Customisations that NEED MANUAL MERGING (${FAIL_COUNT}):"
+        printf '%s\n' "$FAIL_LIST"
+    fi
+    echo
+    echo "Upgraded copy created at:"
+    echo "  $UPGRADED_DIR  (stock ${TO_VERSION} + applied customisations)"
+    if [ "$FINAL_LINES" -gt 0 ]; then
+        echo
+        echo "Differences vs stock ${TO_VERSION}:"
+        echo "  $FINAL_PATCH ($FINAL_LINES lines)"
+    fi
+    echo
+    echo "Report: $REPORT"
 fi
 
 # Create tar.gz archive of the result
