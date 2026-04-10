@@ -7,3 +7,4 @@
 
 # App bundle build artifacts
 *.app
+Contents/
