@@ -212,6 +212,26 @@ mkdir -p "$SOURCE_DIR"
 # Copy live install into source (trailing slashes important)
 rsync -a "$INSTALL_PATH"/ "$SOURCE_DIR"/
 
+############################################
+# Copy database .sql backup to archive root
+############################################
+DB_NAME=$(grep -E "\\\$glob\['dbdatabase'\]" "$INSTALL_PATH/includes/global.inc.php" \
+    | head -n1 \
+    | sed -E "s/.*= *['\"]([^'\"]+)['\"].*/\1/")
+SQL_FOUND=""
+if [ -n "$DB_NAME" ]; then
+    # Search install path first, then walk up ancestors (e.g. cpmove mysql/ folder)
+    SEARCH_DIR="$INSTALL_PATH"
+    while [ "$SEARCH_DIR" != "/" ]; do
+        SQL_FOUND=$(find "$SEARCH_DIR" -type f -name "${DB_NAME}.sql" 2>/dev/null | head -n1)
+        if [ -n "$SQL_FOUND" ]; then
+            cp "$SQL_FOUND" "$ARCHIVE_ROOT/"
+            break
+        fi
+        SEARCH_DIR=$(dirname "$SEARCH_DIR")
+    done
+fi
+
 echo
 echo "Compare from (live):"
 echo "  $INSTALL_PATH"
@@ -221,25 +241,19 @@ echo "  $ARCHIVE_ROOT"
 echo "    source      -> copy of live install"
 echo "    $FROM_VERSION -> FROM_VERSION extracted"
 echo "    $TO_VERSION   -> TO_VERSION extracted"
+if [ -n "$SQL_FOUND" ]; then
+    echo "    ${DB_NAME}.sql -> database backup copied"
+fi
 
 ############################################
 # Auto-apply customisations to latest version
 ############################################
 FROM_DIR="${ARCHIVE_ROOT}/${FROM_VERSION}"
 TO_DIR="${ARCHIVE_ROOT}/${TO_VERSION}"
-UPGRADE_PATCH="${ARCHIVE_ROOT}/upgrade_${FROM_VERSION}_to_${TO_VERSION}.patch"
 CUSTOM_PATCH="${ARCHIVE_ROOT}/customisations_${FROM_VERSION}.patch"
 UPGRADED_DIR="${ARCHIVE_ROOT}/upgraded"
 
 echo
-
-# Generate upgrade patch (stock FROM -> stock TO) for reference
-echo "Generating upgrade patch (${FROM_VERSION} -> ${TO_VERSION})..."
-diff -ruN "$FROM_DIR" "$TO_DIR" \
-    | sed "s|${FROM_DIR}|a|g; s|${TO_DIR}|b|g" \
-    > "$UPGRADE_PATCH" 2>/dev/null || true
-UPGRADE_LINES=$(wc -l < "$UPGRADE_PATCH" | tr -d ' ')
-echo "  $UPGRADE_PATCH ($UPGRADE_LINES lines)"
 
 # Generate customisation patch (stock FROM -> source = user's changes)
 # Only compare files that exist in stock FROM to avoid cache/uploads/non-app files
@@ -304,11 +318,16 @@ else
             echo "$PATCHED_FILES" | sed "s/^/  ✓ /"
         fi
 
-        # Generate a final diff: stock TO vs upgraded (for review)
+        # Generate a final diff: stock TO (normalised) vs upgraded (for review)
         FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
-        diff -ruN "$TO_DIR" "$UPGRADED_DIR" \
-            | sed "s|${TO_DIR}|a|g; s|${UPGRADED_DIR}|b|g" \
+        NORM_TO=$(mktemp -d)
+        cp -a "$TO_DIR" "$NORM_TO/to"
+        find "$NORM_TO/to" -type f \( -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" -o -name "*.tpl" -o -name "*.xml" -o -name "*.json" -o -name "*.sql" -o -name "*.txt" -o -name "*.htaccess" -o -name "*.md" \) \
+            -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+        diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
+            | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
             > "$FINAL_PATCH" 2>/dev/null || true
+        rm -rf "$NORM_TO"
         FINAL_LINES=$(wc -l < "$FINAL_PATCH" | tr -d ' ')
 
         echo
@@ -350,11 +369,16 @@ else
             }
         ')"
 
-        # Generate final diff: stock TO vs upgraded
+        # Generate final diff: stock TO (normalised) vs upgraded
         FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
-        diff -ruN "$TO_DIR" "$UPGRADED_DIR" \
-            | sed "s|${TO_DIR}|a|g; s|${UPGRADED_DIR}|b|g" \
+        NORM_TO=$(mktemp -d)
+        cp -a "$TO_DIR" "$NORM_TO/to"
+        find "$NORM_TO/to" -type f \( -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" -o -name "*.tpl" -o -name "*.xml" -o -name "*.json" -o -name "*.sql" -o -name "*.txt" -o -name "*.htaccess" -o -name "*.md" \) \
+            -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+        diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
+            | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
             > "$FINAL_PATCH" 2>/dev/null || true
+        rm -rf "$NORM_TO"
         FINAL_LINES=$(wc -l < "$FINAL_PATCH" | tr -d ' ')
 
         echo
@@ -378,10 +402,12 @@ else
             echo "  $FINAL_PATCH ($FINAL_LINES lines)"
         fi
         echo
-        echo "Patch files for manual review:"
+        echo "Patch file for manual review:"
         echo "  $CUSTOM_PATCH  (your customisations)"
-        echo "  $UPGRADE_PATCH  (stock upgrade)"
         echo
         echo "Resolve the conflicting file(s) manually, then deploy."
     fi
 fi
+
+# Play completion sound
+afplay /System/Library/Sounds/Glass.aiff &
