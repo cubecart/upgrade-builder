@@ -284,7 +284,7 @@ else
         rm -rf "$UPGRADED_DIR"
     fi
     cp -a "$TO_DIR" "$UPGRADED_DIR"
-    find "$UPGRADED_DIR" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+    find "$UPGRADED_DIR" -type f -exec sh -c 'file -b --mime "$1" | grep -q "^text/" && tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1" || true' _ {} \;
 
     # Dry-run the customisation patch against latest stock
     echo
@@ -332,7 +332,7 @@ else
     FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
     NORM_TO=$(mktemp -d)
     cp -a "$TO_DIR" "$NORM_TO/to"
-    find "$NORM_TO/to" -type f -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+    find "$NORM_TO/to" -type f -exec sh -c 'file -b --mime "$1" | grep -q "^text/" && tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1" || true' _ {} \;
     diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
         | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
         > "$FINAL_PATCH" 2>/dev/null || true
