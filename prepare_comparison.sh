@@ -393,12 +393,5 @@ else
     echo "Report: $REPORT"
 fi
 
-# Create tar.gz archive of the result
-ARCHIVE_NAME="$(basename "$ARCHIVE_ROOT").tar.gz"
-tar -czf "${ARCHIVE_ROOT}.tar.gz" -C "$(dirname "$ARCHIVE_ROOT")" "$(basename "$ARCHIVE_ROOT")"
-echo
-echo "Archive created:"
-echo "  ${ARCHIVE_ROOT}.tar.gz"
-
 # Play completion sound
 afplay /System/Library/Sounds/Glass.aiff &
