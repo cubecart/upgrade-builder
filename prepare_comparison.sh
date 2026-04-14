@@ -256,20 +256,18 @@ echo
 echo "Generating customisation patch (stock ${FROM_VERSION} -> source)..."
 NORM_FROM=$(mktemp -d)
 NORM_SRC=$(mktemp -d)
-> "$CUSTOM_PATCH"
+# Copy only stock files that also exist in source (skip cache/uploads/non-app files)
 while IFS= read -r rel_path; do
-    source_file="${SOURCE_DIR}/${rel_path}"
-    if [ -f "$source_file" ]; then
+    if [ -f "${SOURCE_DIR}/${rel_path}" ]; then
         mkdir -p "$(dirname "$NORM_FROM/$rel_path")" "$(dirname "$NORM_SRC/$rel_path")"
         tr -d '\r' < "$FROM_DIR/$rel_path" > "$NORM_FROM/$rel_path"
-        tr -d '\r' < "$source_file" > "$NORM_SRC/$rel_path"
-        file_diff=$(diff -u "$NORM_FROM/$rel_path" "$NORM_SRC/$rel_path" 2>/dev/null \
-            | sed "s|${NORM_FROM}/|a/|g; s|${NORM_SRC}/|b/|g") || true
-        if [ -n "$file_diff" ]; then
-            printf '%s\n' "$file_diff" >> "$CUSTOM_PATCH"
-        fi
+        tr -d '\r' < "${SOURCE_DIR}/${rel_path}" > "$NORM_SRC/$rel_path"
     fi
 done < <(cd "$FROM_DIR" && find . -type f | sed 's|^\./||' | sort)
+# Bulk diff the normalised trees
+diff -ruN "$NORM_FROM" "$NORM_SRC" \
+    | sed "s|${NORM_FROM}/|a/|g; s|${NORM_SRC}/|b/|g" \
+    > "$CUSTOM_PATCH" 2>/dev/null || true
 rm -rf "$NORM_FROM" "$NORM_SRC"
 CUSTOM_LINES=$(wc -l < "$CUSTOM_PATCH" | tr -d ' ')
 echo "  $CUSTOM_PATCH ($CUSTOM_LINES lines)"
@@ -284,7 +282,17 @@ else
         rm -rf "$UPGRADED_DIR"
     fi
     cp -a "$TO_DIR" "$UPGRADED_DIR"
-    find "$UPGRADED_DIR" -type f -exec sh -c 'file -b --mime "$1" | grep -q "^text/" && tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1" || true' _ {} \;
+    find "$UPGRADED_DIR" -type f \( \
+        -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" \
+        -o -name "*.tpl" -o -name "*.xml" -o -name "*.xsd" -o -name "*.json" -o -name "*.sql" \
+        -o -name "*.txt" -o -name "*.md" -o -name "*.rst" -o -name "*.yml" -o -name "*.yaml" \
+        -o -name "*.svg" -o -name "*.htaccess" -o -name "*.inc" -o -name "*.env_sample" \
+        -o -name "*.csv" -o -name "*.less" -o -name "*.scss" -o -name "*.map" -o -name "*.lock" \
+        -o -name "*.template" -o -name "*.sample" -o -name "*.dist" -o -name "*.neon" \
+        -o -name "*.py" -o -name "*.sh" -o -name "*.gitignore" -o -name "*.gitattributes" \
+        -o -name "*.editorconfig" -o -name "LICENSE" -o -name "VERSION" -o -name "COMMITMENT" \
+        -o -name "Makefile" -o -name "Dockerfile" \
+    \) -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
 
     # Dry-run the customisation patch against latest stock
     echo
@@ -332,7 +340,17 @@ else
     FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
     NORM_TO=$(mktemp -d)
     cp -a "$TO_DIR" "$NORM_TO/to"
-    find "$NORM_TO/to" -type f -exec sh -c 'file -b --mime "$1" | grep -q "^text/" && tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1" || true' _ {} \;
+    find "$NORM_TO/to" -type f \( \
+        -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" \
+        -o -name "*.tpl" -o -name "*.xml" -o -name "*.xsd" -o -name "*.json" -o -name "*.sql" \
+        -o -name "*.txt" -o -name "*.md" -o -name "*.rst" -o -name "*.yml" -o -name "*.yaml" \
+        -o -name "*.svg" -o -name "*.htaccess" -o -name "*.inc" -o -name "*.env_sample" \
+        -o -name "*.csv" -o -name "*.less" -o -name "*.scss" -o -name "*.map" -o -name "*.lock" \
+        -o -name "*.template" -o -name "*.sample" -o -name "*.dist" -o -name "*.neon" \
+        -o -name "*.py" -o -name "*.sh" -o -name "*.gitignore" -o -name "*.gitattributes" \
+        -o -name "*.editorconfig" -o -name "LICENSE" -o -name "VERSION" -o -name "COMMITMENT" \
+        -o -name "Makefile" -o -name "Dockerfile" \
+    \) -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
     diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
         | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
         > "$FINAL_PATCH" 2>/dev/null || true
