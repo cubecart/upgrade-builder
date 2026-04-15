@@ -207,26 +207,6 @@ mkdir -p "$SOURCE_DIR"
 # Copy live install into source (trailing slashes important)
 rsync -a "$INSTALL_PATH"/ "$SOURCE_DIR"/
 
-############################################
-# Copy database .sql backup to archive root
-############################################
-DB_NAME=$(grep -E "\\\$glob\['dbdatabase'\]" "$INSTALL_PATH/includes/global.inc.php" \
-    | head -n1 \
-    | sed -E "s/.*= *['\"]([^'\"]+)['\"].*/\1/")
-SQL_FOUND=""
-if [ -n "$DB_NAME" ]; then
-    # Search install path first, then walk up ancestors (e.g. cpmove mysql/ folder)
-    SEARCH_DIR="$INSTALL_PATH"
-    while [ "$SEARCH_DIR" != "/" ]; do
-        SQL_FOUND=$(find "$SEARCH_DIR" -type f -name "${DB_NAME}.sql" 2>/dev/null | head -n1)
-        if [ -n "$SQL_FOUND" ]; then
-            cp "$SQL_FOUND" "$ARCHIVE_ROOT/"
-            break
-        fi
-        SEARCH_DIR=$(dirname "$SEARCH_DIR")
-    done
-fi
-
 echo
 echo "Compare from (live):"
 echo "  $INSTALL_PATH"
@@ -236,9 +216,6 @@ echo "  $ARCHIVE_ROOT"
 echo "    source      -> copy of live install"
 echo "    $FROM_VERSION -> FROM_VERSION extracted"
 echo "    $TO_VERSION   -> TO_VERSION extracted"
-if [ -n "$SQL_FOUND" ]; then
-    echo "    ${DB_NAME}.sql -> database backup copied"
-fi
 
 ############################################
 # Auto-apply customisations to latest version
@@ -256,14 +233,17 @@ echo
 echo "Generating customisation patch (stock ${FROM_VERSION} -> source)..."
 NORM_FROM=$(mktemp -d)
 NORM_SRC=$(mktemp -d)
-# Copy only stock files that also exist in source (skip cache/uploads/non-app files)
-while IFS= read -r rel_path; do
-    if [ -f "${SOURCE_DIR}/${rel_path}" ]; then
-        mkdir -p "$(dirname "$NORM_FROM/$rel_path")" "$(dirname "$NORM_SRC/$rel_path")"
-        tr -d '\r' < "$FROM_DIR/$rel_path" > "$NORM_FROM/$rel_path"
-        tr -d '\r' < "${SOURCE_DIR}/${rel_path}" > "$NORM_SRC/$rel_path"
-    fi
-done < <(cd "$FROM_DIR" && find . -type f | sed 's|^\./||' | sort)
+# Build list of stock files that also exist in source
+COMMON_FILES=$(mktemp)
+(cd "$FROM_DIR" && find . -type f | sed 's|^\./||') | while IFS= read -r f; do
+    [ -f "${SOURCE_DIR}/$f" ] && printf '%s\n' "$f"
+done > "$COMMON_FILES"
+# Copy matching files preserving directory structure
+rsync -a --files-from="$COMMON_FILES" "$FROM_DIR/" "$NORM_FROM/"
+rsync -a --files-from="$COMMON_FILES" "$SOURCE_DIR/" "$NORM_SRC/"
+rm -f "$COMMON_FILES"
+# Bulk-normalise CRLF in both trees (parallel)
+find "$NORM_FROM" "$NORM_SRC" -type f -print0 | xargs -0 -P4 -I{} sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {}
 # Bulk diff the normalised trees
 diff -ruN "$NORM_FROM" "$NORM_SRC" \
     | sed "s|${NORM_FROM}/|a/|g; s|${NORM_SRC}/|b/|g" \
@@ -292,7 +272,7 @@ else
         -o -name "*.py" -o -name "*.sh" -o -name "*.gitignore" -o -name "*.gitattributes" \
         -o -name "*.editorconfig" -o -name "LICENSE" -o -name "VERSION" -o -name "COMMITMENT" \
         -o -name "Makefile" -o -name "Dockerfile" \
-    \) -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
+    \) -print0 | xargs -0 -P4 -I{} sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {};
 
     # Dry-run the customisation patch against latest stock
     echo
@@ -336,25 +316,13 @@ else
     patch -p1 --forward --no-backup-if-mismatch --reject-file=- -d "$UPGRADED_DIR" < "$CUSTOM_PATCH" > /dev/null 2>&1 || true
     find "$UPGRADED_DIR" -type f \( -name "*.orig" -o -name "*.rej" \) -delete 2>/dev/null
 
-    # Generate final diff: stock TO (normalised) vs upgraded
+    # Generate final diff: stock TO vs upgraded
+    # Both sides come from GitHub zips (same line endings) and UPGRADED_DIR was
+    # already normalised above, so we can diff TO_DIR directly — no temp copy needed
     FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
-    NORM_TO=$(mktemp -d)
-    cp -a "$TO_DIR" "$NORM_TO/to"
-    find "$NORM_TO/to" -type f \( \
-        -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" \
-        -o -name "*.tpl" -o -name "*.xml" -o -name "*.xsd" -o -name "*.json" -o -name "*.sql" \
-        -o -name "*.txt" -o -name "*.md" -o -name "*.rst" -o -name "*.yml" -o -name "*.yaml" \
-        -o -name "*.svg" -o -name "*.htaccess" -o -name "*.inc" -o -name "*.env_sample" \
-        -o -name "*.csv" -o -name "*.less" -o -name "*.scss" -o -name "*.map" -o -name "*.lock" \
-        -o -name "*.template" -o -name "*.sample" -o -name "*.dist" -o -name "*.neon" \
-        -o -name "*.py" -o -name "*.sh" -o -name "*.gitignore" -o -name "*.gitattributes" \
-        -o -name "*.editorconfig" -o -name "LICENSE" -o -name "VERSION" -o -name "COMMITMENT" \
-        -o -name "Makefile" -o -name "Dockerfile" \
-    \) -exec sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \;
-    diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
-        | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
+    diff -ruN "$TO_DIR" "$UPGRADED_DIR" \
+        | sed "s|${TO_DIR}|a|g; s|${UPGRADED_DIR}|b|g" \
         > "$FINAL_PATCH" 2>/dev/null || true
-    rm -rf "$NORM_TO"
     FINAL_LINES=$(wc -l < "$FINAL_PATCH" | tr -d ' ')
 
     # Write report file
