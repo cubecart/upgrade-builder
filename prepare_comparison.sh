@@ -233,17 +233,27 @@ echo
 echo "Generating customisation patch (stock ${FROM_VERSION} -> source)..."
 NORM_FROM=$(mktemp -d)
 NORM_SRC=$(mktemp -d)
-# Build list of stock files that also exist in source
+# Build file list of stock files that also exist in source
 COMMON_FILES=$(mktemp)
 (cd "$FROM_DIR" && find . -type f | sed 's|^\./||') | while IFS= read -r f; do
-    [ -f "${SOURCE_DIR}/$f" ] && printf '%s\n' "$f"
+    if [ -f "${SOURCE_DIR}/$f" ]; then echo "$f"; fi
 done > "$COMMON_FILES"
-# Copy matching files preserving directory structure
+# Copy matching files into normalised trees
 rsync -a --files-from="$COMMON_FILES" "$FROM_DIR/" "$NORM_FROM/"
 rsync -a --files-from="$COMMON_FILES" "$SOURCE_DIR/" "$NORM_SRC/"
 rm -f "$COMMON_FILES"
-# Bulk-normalise CRLF in both trees (parallel)
-find "$NORM_FROM" "$NORM_SRC" -type f -print0 | xargs -0 -P4 -I{} sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {}
+# Bulk-normalise CRLF in text files only (parallel)
+find "$NORM_FROM" "$NORM_SRC" -type f \( \
+    -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" \
+    -o -name "*.tpl" -o -name "*.xml" -o -name "*.xsd" -o -name "*.json" -o -name "*.sql" \
+    -o -name "*.txt" -o -name "*.md" -o -name "*.rst" -o -name "*.yml" -o -name "*.yaml" \
+    -o -name "*.svg" -o -name "*.htaccess" -o -name "*.inc" -o -name "*.env_sample" \
+    -o -name "*.csv" -o -name "*.less" -o -name "*.scss" -o -name "*.map" -o -name "*.lock" \
+    -o -name "*.template" -o -name "*.sample" -o -name "*.dist" -o -name "*.neon" \
+    -o -name "*.py" -o -name "*.sh" -o -name "*.gitignore" -o -name "*.gitattributes" \
+    -o -name "*.editorconfig" -o -name "LICENSE" -o -name "VERSION" -o -name "COMMITMENT" \
+    -o -name "Makefile" -o -name "Dockerfile" \
+\) -print0 | xargs -0 -P4 -I{} sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {}
 # Bulk diff the normalised trees
 diff -ruN "$NORM_FROM" "$NORM_SRC" \
     | sed "s|${NORM_FROM}/|a/|g; s|${NORM_SRC}/|b/|g" \
@@ -316,13 +326,25 @@ else
     patch -p1 --forward --no-backup-if-mismatch --reject-file=- -d "$UPGRADED_DIR" < "$CUSTOM_PATCH" > /dev/null 2>&1 || true
     find "$UPGRADED_DIR" -type f \( -name "*.orig" -o -name "*.rej" \) -delete 2>/dev/null
 
-    # Generate final diff: stock TO vs upgraded
-    # Both sides come from GitHub zips (same line endings) and UPGRADED_DIR was
-    # already normalised above, so we can diff TO_DIR directly — no temp copy needed
+    # Generate final diff: stock TO (normalised) vs upgraded
     FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
-    diff -ruN "$TO_DIR" "$UPGRADED_DIR" \
-        | sed "s|${TO_DIR}|a|g; s|${UPGRADED_DIR}|b|g" \
+    NORM_TO=$(mktemp -d)
+    cp -a "$TO_DIR" "$NORM_TO/to"
+    find "$NORM_TO/to" -type f \( \
+        -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.htm" \
+        -o -name "*.tpl" -o -name "*.xml" -o -name "*.xsd" -o -name "*.json" -o -name "*.sql" \
+        -o -name "*.txt" -o -name "*.md" -o -name "*.rst" -o -name "*.yml" -o -name "*.yaml" \
+        -o -name "*.svg" -o -name "*.htaccess" -o -name "*.inc" -o -name "*.env_sample" \
+        -o -name "*.csv" -o -name "*.less" -o -name "*.scss" -o -name "*.map" -o -name "*.lock" \
+        -o -name "*.template" -o -name "*.sample" -o -name "*.dist" -o -name "*.neon" \
+        -o -name "*.py" -o -name "*.sh" -o -name "*.gitignore" -o -name "*.gitattributes" \
+        -o -name "*.editorconfig" -o -name "LICENSE" -o -name "VERSION" -o -name "COMMITMENT" \
+        -o -name "Makefile" -o -name "Dockerfile" \
+    \) -print0 | xargs -0 -P4 -I{} sh -c 'tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {}
+    diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
+        | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
         > "$FINAL_PATCH" 2>/dev/null || true
+    rm -rf "$NORM_TO"
     FINAL_LINES=$(wc -l < "$FINAL_PATCH" | tr -d ' ')
 
     # Write report file
