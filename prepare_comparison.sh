@@ -234,10 +234,18 @@ echo "Generating customisation patch (stock ${FROM_VERSION} -> source)..."
 NORM_FROM=$(mktemp -d)
 NORM_SRC=$(mktemp -d)
 # Build file list of stock files that also exist in source
+# Skip orphans: empty-in-source but non-empty in stock — likely a broken deploy, not a real customisation
 COMMON_FILES=$(mktemp)
+ORPHANS=$(mktemp)
 (cd "$FROM_DIR" && find . -type f | sed 's|^\./||') | while IFS= read -r f; do
-    if [ -f "${SOURCE_DIR}/$f" ]; then echo "$f"; fi
+    if [ ! -f "${SOURCE_DIR}/$f" ]; then continue; fi
+    if [ ! -s "${SOURCE_DIR}/$f" ] && [ -s "${FROM_DIR}/$f" ]; then
+        echo "$f" >> "$ORPHANS"
+        continue
+    fi
+    echo "$f"
 done > "$COMMON_FILES"
+ORPHAN_COUNT=$(wc -l < "$ORPHANS" | tr -d ' ')
 # Copy matching files into normalised trees
 rsync -a --files-from="$COMMON_FILES" "$FROM_DIR/" "$NORM_FROM/"
 rsync -a --files-from="$COMMON_FILES" "$SOURCE_DIR/" "$NORM_SRC/"
@@ -250,6 +258,10 @@ diff -ruN "$NORM_FROM" "$NORM_SRC" \
     > "$CUSTOM_PATCH" 2>/dev/null || true
 rm -rf "$NORM_FROM" "$NORM_SRC"
 CUSTOM_LINES=$(wc -l < "$CUSTOM_PATCH" | tr -d ' ')
+
+if [ "${ORPHAN_COUNT:-0}" -gt 0 ]; then
+    echo "  Skipped ${ORPHAN_COUNT} empty-in-source files (likely broken deploy — see REPORT.txt)"
+fi
 
 if [ "$CUSTOM_LINES" -eq 0 ]; then
     rm -f "$CUSTOM_PATCH"
@@ -268,6 +280,11 @@ if [ "$CUSTOM_LINES" -eq 0 ]; then
         echo
         echo "No customisations detected. Your source matches stock ${FROM_VERSION}."
         echo "Simply deploy the ${TO_VERSION} folder as your upgrade."
+        if [ "${ORPHAN_COUNT:-0}" -gt 0 ]; then
+            echo
+            echo "Orphan files (empty in source, non-empty in stock — excluded from customisation diff):"
+            sed 's/^/  - /' "$ORPHANS"
+        fi
     } > "$REPORT"
     echo
     echo "Report: $REPORT"
@@ -357,6 +374,11 @@ else
         else
             echo "All customisations applied successfully."
         fi
+        if [ "${ORPHAN_COUNT:-0}" -gt 0 ]; then
+            echo
+            echo "Orphan files (empty in source, non-empty in stock — excluded from customisation diff):"
+            sed 's/^/  - /' "$ORPHANS"
+        fi
     } > "$REPORT"
 
     echo
@@ -386,6 +408,8 @@ else
     echo
     echo "Report: $REPORT"
 fi
+
+rm -f "$ORPHANS"
 
 # Play completion sound
 afplay /System/Library/Sounds/Glass.aiff &
