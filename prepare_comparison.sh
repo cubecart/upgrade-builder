@@ -242,8 +242,8 @@ done > "$COMMON_FILES"
 rsync -a --files-from="$COMMON_FILES" "$FROM_DIR/" "$NORM_FROM/"
 rsync -a --files-from="$COMMON_FILES" "$SOURCE_DIR/" "$NORM_SRC/"
 rm -f "$COMMON_FILES"
-# Bulk-normalise CRLF in all files (LC_ALL=C avoids 'Illegal byte sequence' on binary)
-find "$NORM_FROM" "$NORM_SRC" -type f -print0 | xargs -0 -P4 -I{} sh -c 'LC_ALL=C tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {}
+# Bulk-normalise CRLF in text files only — `grep -qI .` skips binaries so images/fonts aren't stripped of 0x0D bytes
+find "$NORM_FROM" "$NORM_SRC" -type f -print0 | xargs -0 -P4 -I{} sh -c 'grep -qI . "$1" 2>/dev/null && LC_ALL=C tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {}
 # Bulk diff the normalised trees
 diff -ruN "$NORM_FROM" "$NORM_SRC" \
     | sed "s|${NORM_FROM}/|a/|g; s|${NORM_SRC}/|b/|g" \
@@ -278,7 +278,7 @@ else
         rm -rf "$UPGRADED_DIR"
     fi
     cp -a "$TO_DIR" "$UPGRADED_DIR"
-    find "$UPGRADED_DIR" -type f -print0 | xargs -0 -P4 -I{} sh -c 'LC_ALL=C tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {};
+    find "$UPGRADED_DIR" -type f -print0 | xargs -0 -P4 -I{} sh -c 'grep -qI . "$1" 2>/dev/null && LC_ALL=C tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {};
 
     # Dry-run the customisation patch against latest stock
     echo
@@ -326,7 +326,7 @@ else
     FINAL_PATCH="${ARCHIVE_ROOT}/upgrade_${TO_VERSION}_to_upgraded.patch"
     NORM_TO=$(mktemp -d)
     cp -a "$TO_DIR" "$NORM_TO/to"
-    find "$NORM_TO/to" -type f -print0 | xargs -0 -P4 -I{} sh -c 'LC_ALL=C tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {}
+    find "$NORM_TO/to" -type f -print0 | xargs -0 -P4 -I{} sh -c 'grep -qI . "$1" 2>/dev/null && LC_ALL=C tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {}
     diff -ruN "$NORM_TO/to" "$UPGRADED_DIR" \
         | sed "s|${NORM_TO}/to|a|g; s|${UPGRADED_DIR}|b|g" \
         > "$FINAL_PATCH" 2>/dev/null || true
