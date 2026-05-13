@@ -74,30 +74,38 @@ if [ -z "$FROM_VERSION" ]; then
 fi
 
 ############################################
-# 2) Detect admin directory
+# 2) Detect admin folder and file from includes/global.inc.php
 ############################################
-ADMIN_DIR_PATH=$(find "$INSTALL_PATH" -maxdepth 1 -type d -name "admin_*" | head -n1 || true)
-if [ -z "$ADMIN_DIR_PATH" ] && [ -d "$INSTALL_PATH/admin" ]; then
-    ADMIN_DIR_PATH="$INSTALL_PATH/admin"
-fi
-if [ -z "$ADMIN_DIR_PATH" ]; then
-    echo "ERROR: No admin directory found."
+GLOBAL_FILE="$INSTALL_PATH/includes/global.inc.php"
+if [ ! -f "$GLOBAL_FILE" ]; then
+    echo "ERROR: '$GLOBAL_FILE' is missing."
     exit 1
 fi
-ADMIN_FOLDER=$(basename "$ADMIN_DIR_PATH")
 
-############################################
-# 3) Detect admin file
-############################################
-ADMIN_FILE_PATH=$(find "$INSTALL_PATH" -maxdepth 1 -type f -name "admin_*.php" | head -n1 || true)
-if [ -z "$ADMIN_FILE_PATH" ] && [ -f "$INSTALL_PATH/admin.php" ]; then
-    ADMIN_FILE_PATH="$INSTALL_PATH/admin.php"
-fi
-if [ -z "$ADMIN_FILE_PATH" ]; then
-    echo "ERROR: No admin file found."
+ADMIN_FOLDER=$(grep -E '\$glob\[.adminFolder.\]' "$GLOBAL_FILE" \
+    | head -n1 \
+    | sed -E "s/.*=[[:space:]]*['\"]([^'\"]+)['\"].*/\1/")
+
+ADMIN_FILE=$(grep -E '\$glob\[.adminFile.\]' "$GLOBAL_FILE" \
+    | head -n1 \
+    | sed -E "s/.*=[[:space:]]*['\"]([^'\"]+)['\"].*/\1/")
+
+if [ -z "$ADMIN_FOLDER" ]; then
+    echo "ERROR: Could not find \$glob['adminFolder'] in $GLOBAL_FILE"
     exit 1
 fi
-ADMIN_FILE=$(basename "$ADMIN_FILE_PATH")
+if [ -z "$ADMIN_FILE" ]; then
+    echo "ERROR: Could not find \$glob['adminFile'] in $GLOBAL_FILE"
+    exit 1
+fi
+if [ ! -d "$INSTALL_PATH/$ADMIN_FOLDER" ]; then
+    echo "ERROR: Admin folder '$ADMIN_FOLDER' (from global.inc.php) not found at $INSTALL_PATH/$ADMIN_FOLDER"
+    exit 1
+fi
+if [ ! -f "$INSTALL_PATH/$ADMIN_FILE" ]; then
+    echo "ERROR: Admin file '$ADMIN_FILE' (from global.inc.php) not found at $INSTALL_PATH/$ADMIN_FILE"
+    exit 1
+fi
 
 ############################################
 # 4) Fetch latest CubeCart version from GitHub
