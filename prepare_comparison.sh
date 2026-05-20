@@ -181,7 +181,9 @@ process_version() {
     local subfolder
     subfolder=$(find "$root_dir" -maxdepth 1 -mindepth 1 -type d | head -n1 || true)
     if [ -n "$subfolder" ] && [ "$(ls -A "$root_dir" | wc -l)" -eq 1 ]; then
-        mv "$subfolder"/* "$root_dir"/
+        # dotglob so GitHub zipball dotfiles (.gitignore, .gitattributes…) move too,
+        # otherwise rmdir below fails with "Directory not empty"
+        (shopt -s dotglob nullglob; mv "$subfolder"/* "$root_dir"/)
         rmdir "$subfolder"
     fi
 
