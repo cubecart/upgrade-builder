@@ -110,7 +110,7 @@ fi
 ############################################
 # 4) Fetch latest CubeCart version from GitHub
 ############################################
-TO_VERSION=$(curl -fsS "https://api.github.com/repos/cubecart/v6/releases/latest" \
+TO_VERSION=$(curl -fsS --retry 5 --retry-delay 2 --retry-all-errors "https://api.github.com/repos/cubecart/v6/releases/latest" \
     | grep '"tag_name"' \
     | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/' \
     | tr -d '\r\n' || true)
@@ -145,7 +145,7 @@ download_if_missing() {
     fi
 
     echo "Downloading CubeCart ${version} from GitHub..."
-    curl -fsSLo "$zip_file" "https://api.github.com/repos/cubecart/v6/zipball/${version}" || {
+    curl -fsSLo "$zip_file" --retry 5 --retry-delay 2 --retry-all-errors "https://api.github.com/repos/cubecart/v6/zipball/${version}" || {
         echo "ERROR: Failed to download CubeCart ${version} from GitHub"
         exit 1
     }
