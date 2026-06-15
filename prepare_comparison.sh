@@ -110,10 +110,19 @@ fi
 ############################################
 # 4) Fetch latest CubeCart version from GitHub
 ############################################
-TO_VERSION=$(curl -fsS --retry 5 --retry-delay 2 --retry-all-errors "https://api.github.com/repos/cubecart/v6/releases/latest" \
-    | grep '"tag_name"' \
-    | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/' \
-    | tr -d '\r\n' || true)
+# /releases/latest has been returning 504 intermittently; fall back to the
+# releases list (newest first) which uses different infrastructure.
+fetch_latest_tag() {
+    curl -fsS --retry 5 --retry-delay 2 --retry-all-errors "$1" \
+        | grep '"tag_name"' \
+        | head -n1 \
+        | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/' \
+        | tr -d '\r\n'
+}
+TO_VERSION=$(fetch_latest_tag "https://api.github.com/repos/cubecart/v6/releases/latest" || true)
+if [ -z "$TO_VERSION" ]; then
+    TO_VERSION=$(fetch_latest_tag "https://api.github.com/repos/cubecart/v6/releases?per_page=1" || true)
+fi
 
 if [ -z "$TO_VERSION" ]; then
     echo "ERROR: Could not fetch latest version from GitHub."
