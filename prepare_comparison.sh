@@ -59,7 +59,38 @@ else
     ARCHIVE_ROOT="${DOWNLOAD_DIR}"
 fi
 
-mkdir -p "$ARCHIVE_ROOT"
+tcc_hint() {
+    cat <<EOF >&2
+
+ERROR: $1
+
+macOS is blocking this app from writing to your Downloads folder.
+Fix:
+  1. Open System Settings → Privacy & Security → Files and Folders
+  2. Find "CubeCart Upgrade Builder", expand it,
+     toggle "Downloads Folder" ON
+  3. If it's not listed, add the app to Full Disk Access instead
+  4. Re-run this app
+
+EOF
+    exit 1
+}
+
+# rm -rf that fails loudly with TCC guidance instead of a cryptic
+# "Operation not permitted" from macOS App Management provenance
+safe_rmrf() {
+    local path="$1"
+    [ -e "$path" ] || return 0
+    rm -rf "$path" 2>/dev/null || true
+    if [ -e "$path" ]; then
+        tcc_hint "Cannot delete '$path' (macOS denied it)."
+    fi
+}
+
+mkdir -p "$ARCHIVE_ROOT" 2>/dev/null || true
+if [ ! -d "$ARCHIVE_ROOT" ]; then
+    tcc_hint "Cannot create '$ARCHIVE_ROOT'."
+fi
 
 ############################################
 # 1) Get FROM_VERSION
@@ -142,6 +173,13 @@ echo "  PREFIX       : ${PREFIX_SANITISED:-<none>}"
 echo "  ARCHIVE_ROOT : $ARCHIVE_ROOT"
 echo
 
+if [ "$FROM_VERSION" = "$TO_VERSION" ]; then
+    # Nothing to build; drop the archive root if we just created it and it's empty
+    rmdir "$ARCHIVE_ROOT" 2>/dev/null || true
+    echo "ERROR: Nothing to do — your install is already on the latest CubeCart version (${FROM_VERSION})." >&2
+    exit 1
+fi
+
 ############################################
 # Auto-download if archive missing
 ############################################
@@ -174,9 +212,7 @@ process_version() {
     local root_dir="${ARCHIVE_ROOT}/${version}"
 
     # If version dir already exists, remove it
-    if [ -d "$root_dir" ]; then
-        rm -rf "$root_dir"
-    fi
+    safe_rmrf "$root_dir"
 
     mkdir -p "$root_dir"
 
@@ -218,9 +254,7 @@ process_version "$TO_VERSION"
 # Copy source to ARCHIVE_ROOT/source
 ############################################
 SOURCE_DIR="${ARCHIVE_ROOT}/source"
-if [ -d "$SOURCE_DIR" ]; then
-    rm -rf "$SOURCE_DIR"
-fi
+safe_rmrf "$SOURCE_DIR"
 
 mkdir -p "$SOURCE_DIR"
 # Copy live install into source (trailing slashes important)
@@ -310,9 +344,7 @@ if [ "$CUSTOM_LINES" -eq 0 ]; then
 else
     echo "  $CUSTOM_PATCH ($CUSTOM_LINES lines)"
     # Start with a copy of stock TO_VERSION (latest release), normalised to LF
-    if [ -d "$UPGRADED_DIR" ]; then
-        rm -rf "$UPGRADED_DIR"
-    fi
+    safe_rmrf "$UPGRADED_DIR"
     cp -a "$TO_DIR" "$UPGRADED_DIR"
     find "$UPGRADED_DIR" -type f -print0 | xargs -0 -P4 -I{} sh -c 'if grep -qI . "$1" 2>/dev/null; then LC_ALL=C tr -d "\r" < "$1" > "$1.tmp" && mv "$1.tmp" "$1"; fi' _ {};
 
