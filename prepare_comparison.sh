@@ -182,8 +182,8 @@ process_version() {
 
     unzip -q "$zip_file" -d "$root_dir"
 
-    # Remove ZIP after extraction
-    rm -f "$zip_file"
+    # Keep the zip cached — download_if_missing reuses it, and when
+    # FROM_VERSION == TO_VERSION we're called twice on the same file.
 
     # GitHub zipballs extract into a subfolder (e.g. cubecart-v6-abc1234/)
     # Flatten: move contents up and remove the subfolder
